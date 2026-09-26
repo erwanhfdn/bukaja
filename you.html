@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iLoveyouMore</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+canvas {
+    display: block;
+    position: fixed;
+    left: 0;
+    top: 0;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="canvas"></canvas>
+
+<script>
+/* =========================================================
+   CANVAS & SETUP
+========================================================= */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let width = 0;
+let height = 0;
+let dpr = 1;
+
+let time = 0;
+let startTime = performance.now();
+
+/* =========================================================
+   HEART SETTINGS (Preserved Exact Algorithm)
+========================================================= */
+const PARTICLE_COUNT = 10000;
+const MOVEMENT_SPEED = 0.025;
+const LIGHT_SPEED = 0.075;
+const particles = [];
+
+/* =========================================================
+   TORNADO SMOKE TEXT SETTINGS
+========================================================= */
+const SMOKE_PARTICLE_COUNT = 2400;
+const TEXT_CYCLE = 12000; // 12 Seconds Loop
+
+/* =========================================================
+   EASING UTILITIES
+========================================================= */
+function smoothStep(t) {
+    t = Math.max(0, Math.min(1, t));
+    return t * t * (3 - 2 * t);
+}
+
+function easeInOut(t) {
+    t = Math.max(0, Math.min(1, t));
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+/* =========================================================
+   RESIZE
+========================================================= */
+function resizeCanvas() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+/* =========================================================
+   HEART EQUATION
+========================================================= */
+function heartPosition(t) {
+    const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+
+    return {
+        x: x,
+        y: -y
+    };
+}
+
+/* =========================================================
+   HEART PARTICLE CLASS
+========================================================= */
+class HeartParticle {
+    constructor() {
+        this.t = Math.random() * Math.PI * 2;
+        this.radius = Math.sqrt(Math.random());
+
+        const point = heartPosition(this.t);
+
+        this.baseX = point.x * this.radius;
+        this.baseY = point.y * this.radius;
+
+        this.size = Math.random() * 1.5 + 0.25;
+        this.alpha = Math.random() * 0.65 + 0.25;
+
+        this.phaseX = Math.random() * Math.PI * 2;
+        this.speedX = MOVEMENT_SPEED * (0.5 + Math.random() * 1.5);
+        this.strengthX = Math.random() * 1.2 + 0.3;
+
+        this.phaseY = Math.random() * Math.PI * 2;
+        this.speedY = MOVEMENT_SPEED * (0.5 + Math.random() * 1.5);
+        this.strengthY = Math.random() * 1.2 + 0.3;
+
+        this.pulsePhase = Math.random() * Math.PI * 2;
+        this.pulseSpeed = Math.random() * 0.06 + 0.025;
+
+        this.lightPhase = Math.random() * Math.PI * 2;
+        this.lightSpeed = LIGHT_SPEED * (0.5 + Math.random() * 1.8);
+
+        this.minLight = Math.random() * 0.35;
+        this.maxLight = 0.75 + Math.random() * 0.25;
+
+        this.green = 170 + Math.random() * 80;
+        this.blue = 225 + Math.random() * 30;
+    }
+
+    update() {
+        this.phaseX += this.speedX;
+        this.phaseY += this.speedY;
+        this.pulsePhase += this.pulseSpeed;
+        this.lightPhase += this.lightSpeed;
+
+        const moveX = Math.sin(this.phaseX) * this.strengthX;
+        const moveY = Math.cos(this.phaseY) * this.strengthY;
+
+        const particlePulse = 1 + Math.sin(this.pulsePhase) * 0.045;
+        const scale = Math.min(width, height) / 47;
+
+        this.x = this.baseX * scale * particlePulse + moveX;
+        this.y = this.baseY * scale * particlePulse + moveY;
+    }
+
+    draw() {
+        const lightWave = (Math.sin(this.lightPhase) + 1) / 2;
+        const light = this.minLight + (this.maxLight - this.minLight) * lightWave;
+        const flicker = Math.sin(this.lightPhase * 2.7) * 0.12;
+
+        const finalLight = Math.max(0.08, Math.min(1, light + flicker));
+
+        const x = width / 2 + this.x;
+        const y = height * 0.45 + this.y;
+
+        const size = this.size * (1 + finalLight * 0.35);
+        const alpha = this.alpha * (0.35 + finalLight * 0.9);
+
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(0.2, size), 0, Math.PI * 2);
+
+        ctx.fillStyle = `rgba(60, ${this.green}, ${this.blue}, ${alpha})`;
+
+        ctx.shadowBlur = 3 + finalLight * 12;
+        ctx.shadowColor = `rgba(0, 170, 255, ${finalLight})`;
+
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+}
+
+// Generate Heart Particles
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new HeartParticle());
+}
+
+/* =========================================================
+   BACKGROUND GLOW & SPARKLES
+========================================================= */
+function drawBackgroundGlow() {
+    const centerX = width / 2;
+    const centerY = height * 0.45;
+
+    const gradient = ctx.createRadialGradient(
+        centerX, centerY, 20,
+        centerX, centerY, Math.min(width, height) * 0.40
+    );
+
+    gradient.addColorStop(0, "rgba(0,100,255,0.055)");
+    gradient.addColorStop(0.5, "rgba(0,50,150,0.018)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+}
+
+const sparks = [];
+for (let i = 0; i < 250; i++) {
+    sparks.push({
+        angle: Math.random() * Math.PI * 2,
+        radius: Math.random() * 200 + 90,
+        speed: Math.random() * 0.03 + 0.005,
+        size: Math.random() * 1.3 + 0.2,
+        phase: Math.random() * Math.PI * 2,
+        alpha: Math.random() * 0.5 + 0.05
+    });
+}
+
+function drawSparks() {
+    for (const spark of sparks) {
+        spark.phase += spark.speed;
+        const flicker = (Math.sin(spark.phase) + 1) / 2;
+
+        const x = width / 2 + Math.cos(spark.angle) * spark.radius;
+        const y = height * 0.45 + Math.sin(spark.angle) * spark.radius * 0.7;
+
+        ctx.beginPath();
+        ctx.arc(x, y, spark.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(80, 200, 255, ${spark.alpha * flicker})`;
+        ctx.fill();
+    }
+}
+
+/* =========================================================
+   OFFSCREEN TEXT CANVAS & SAMPLING
+========================================================= */
+const textCanvas = document.createElement("canvas");
+const textCtx = textCanvas.getContext("2d");
+let textTargets = [];
+
+function createTextParticles() {
+    textCanvas.width = width;
+    textCanvas.height = 180;
+
+    textCtx.clearRect(0, 0, width, 180);
+    textCtx.font = '50px "Algerian", cursive';
+    textCtx.textAlign = "center";
+    textCtx.textBaseline = "middle";
+    textCtx.fillStyle = "#ffffff";
+    textCtx.fillText("erwan rima", width / 2, 120);
+
+    const imageData = textCtx.getImageData(0, 0, width, 180);
+    const data = imageData.data;
+    const possiblePoints = [];
+
+    for (let y = 0; y < 180; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+            const index = (y * width + x) * 4;
+            if (data[index + 3] > 80) {
+                possiblePoints.push({
+                    x: x - width / 2,
+                    y: y - 90
+                });
+            }
+        }
+    }
+
+    textTargets = [];
+    if (possiblePoints.length === 0) return;
+
+    for (let i = 0; i < SMOKE_PARTICLE_COUNT; i++) {
+        const pt = possiblePoints[Math.floor(Math.random() * possiblePoints.length)];
+        textTargets.push(pt);
+    }
+}
+
+/* =========================================================
+   TORNADO SMOKE PARTICLE CLASS
+========================================================= */
+class TornadoSmokeParticle {
+    constructor(target) {
+        this.targetX = target.x;
+        this.targetY = target.y;
+
+        // Tornado Spiral parameters
+        this.vortexRadius = Math.random() * 320 + 80;
+        this.vortexAngle = Math.random() * Math.PI * 2;
+        this.vortexSpeed = 0.05 + Math.random() * 0.08;
+        this.vortexHeightOffset = (Math.random() - 0.5) * 400;
+
+        // Smoke Appearance & Turbulence
+        this.size = Math.random() * 2.5 + 1.2;
+        this.maxAlpha = 0.4 + Math.random() * 0.4;
+        this.currentAlpha = 0;
+
+        // Swirl / Turbulence offsets
+        this.noiseSeed = Math.random() * 100;
+        this.noiseSpeed = 0.02 + Math.random() * 0.03;
+
+        this.x = 0;
+        this.y = 0;
+    }
+
+    // Phase 1: Vortex Sweeping In (0 - 3.5s)
+    swirlIn(progress) {
+        const ease = easeInOut(progress);
+        
+        // Spin inside tornado spiral
+        this.vortexAngle += this.vortexSpeed;
+        
+        const currentRadius = this.vortexRadius * (1 - ease);
+        const spiralX = Math.cos(this.vortexAngle) * currentRadius;
+        const spiralY = Math.sin(this.vortexAngle * 2) * (currentRadius * 0.3) + (1 - ease) * this.vortexHeightOffset;
+
+        const destX = width / 2 + this.targetX;
+        const destY = height * 0.76 + this.targetY;
+
+        this.x = destX + spiralX;
+        this.y = destY + spiralY;
+
+        // Smooth smoke fade in
+        this.currentAlpha = smoothStep(progress) * this.maxAlpha;
+    }
+
+    // Phase 2: Form & Hold Text with Gentle Smoke Oscillations (3.5s - 7.5s)
+    hold(progress) {
+        const destX = width / 2 + this.targetX;
+        const destY = height * 0.76 + this.targetY;
+
+        this.noiseSeed += this.noiseSpeed;
+        const smokeSwirlX = Math.sin(this.noiseSeed) * 1.8;
+        const smokeSwirlY = Math.cos(this.noiseSeed * 1.3) * 1.8;
+
+        this.x = destX + smokeSwirlX;
+        this.y = destY + smokeSwirlY;
+        this.currentAlpha = this.maxAlpha;
+    }
+
+    // Phase 3: Tornado Dissipate / Spiral Away (7.5s - 12.0s)
+    swirlOut(progress) {
+        const ease = easeInOut(progress);
+        
+        this.vortexAngle += this.vortexSpeed * (1 + ease * 1.5);
+        
+        const outRadius = ease * (350 + this.vortexRadius * 0.8);
+        const spiralX = Math.cos(this.vortexAngle) * outRadius;
+        const spiralY = -ease * 300 + Math.sin(this.vortexAngle) * (outRadius * 0.4);
+
+        const destX = width / 2 + this.targetX;
+        const destY = height * 0.76 + this.targetY;
+
+        this.x = destX + spiralX;
+        this.y = destY + spiralY;
+
+        this.currentAlpha = (1 - smoothStep(progress)) * this.maxAlpha;
+    }
+
+    draw() {
+        if (this.currentAlpha <= 0.005) return;
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+
+        // Cyan-Blue Smoke color matching heart scheme
+        ctx.fillStyle = `rgba(100, 210, 255, ${this.currentAlpha})`;
+
+        // Atmospheric soft glow
+        ctx.shadowBlur = 6 + this.size * 2;
+        ctx.shadowColor = `rgba(0, 160, 255, ${this.currentAlpha * 0.8})`;
+
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+}
+
+let smokeParticles = [];
+
+function initializeSmokeParticles() {
+    smokeParticles = [];
+    for (const target of textTargets) {
+        smokeParticles.push(new TornadoSmokeParticle(target));
+    }
+}
+
+/* =========================================================
+   TORNADO TEXT ANIMATION CONTROLLER
+========================================================= */
+function drawTextAnimation() {
+    if (smokeParticles.length === 0) return;
+
+    const current = time % TEXT_CYCLE;
+
+    // 0s - 3.5s : Tornado Vortex Swirling In
+    if (current < 3500) {
+        const progress = current / 3500;
+        for (const p of smokeParticles) {
+            p.swirlIn(progress);
+            p.draw();
+        }
+    } 
+    // 3.5s - 7.5s : Formed Text Holding & Breathing Smoke
+    else if (current < 7500) {
+        const progress = (current - 3500) / 4000;
+        for (const p of smokeParticles) {
+            p.hold(progress);
+            p.draw();
+        }
+    } 
+    // 7.5s - 12s : Tornado Whirlpool Dissipating Away
+    else {
+        const progress = (current - 7500) / 4500;
+        for (const p of smokeParticles) {
+            p.swirlOut(progress);
+            p.draw();
+        }
+    }
+}
+
+/* =========================================================
+   MAIN ANIMATION LOOP
+========================================================= */
+function animate() {
+    time = performance.now() - startTime;
+
+    // Clear Canvas
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, width, height);
+
+    // Render Layers
+    drawBackgroundGlow();
+    drawSparks();
+
+    // Heart Animation
+    for (const particle of particles) {
+        particle.update();
+        particle.draw();
+    }
+
+    // Tornado Smoke Text Animation
+    drawTextAnimation();
+
+    requestAnimationFrame(animate);
+}
+
+/* =========================================================
+   INITIALIZATION & RESPONSIVENESS
+========================================================= */
+resizeCanvas();
+createTextParticles();
+initializeSmokeParticles();
+animate();
+
+window.addEventListener("resize", () => {
+    resizeCanvas();
+    createTextParticles();
+    initializeSmokeParticles();
+    startTime = performance.now();
+});
+</script>
+
+</body>
+</html>
